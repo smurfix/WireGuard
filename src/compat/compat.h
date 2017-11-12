@@ -523,6 +523,10 @@ struct _____dummy_container { char dev; };
 #define from_timer(var, callback_timer, timer_fieldname) container_of(callback_timer, typeof(*var), timer_fieldname)
 #endif
 
+#if defined(CONFIG_PAX_RAP) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0)
+#error "Using RAP with WireGuard requires Linux >=4.15."
+#endif
+
 /* https://lkml.org/lkml/2017/6/23/790 */
 #if IS_ENABLED(CONFIG_NF_CONNTRACK)
 #include <linux/ip.h>
