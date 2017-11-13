@@ -5,6 +5,8 @@ cscope.out
 *.ko
 *.mod.c
 src/tools/wg
+src/dkms.conf
+src/version.h
 Module.symvers
 *.cmd
 .tmp_versions
