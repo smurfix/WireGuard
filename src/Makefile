@@ -14,19 +14,15 @@ MAKEFLAGS += --no-print-directory
 endif
 
 version.h:
-	@export GIT_CEILING_DIRECTORIES="$$(readlink -f ../..)" && \
-	ver="#define WIREGUARD_VERSION \"$$(git describe --dirty 2>/dev/null)\"" && \
+	ver="#define WIREGUARD_VERSION \"$$(cd .. && dpkg-parsechangelog -S Version)\"" && \
 	[ "$$(cat version.h 2>/dev/null)" != "$$ver" ] && \
-	echo "$$ver" > version.h && \
-	git update-index --assume-unchanged version.h || true
+	echo "$$ver" > version.h || true
 
 dkms.conf:
-	@export GIT_CEILING_DIRECTORIES="$$(readlink -f ../..)" && \
-	ver="$$(git describe --dirty 2>/dev/null)" && \
+	ver="$$(cd .. && dpkg-parsechangelog -S Version)" && \
 	. ./dkms.conf && \
 	[ "$$PACKAGE_VERSION" != "$$ver" ] && \
-	sed -i "s/PACKAGE_VERSION=.*/PACKAGE_VERSION=\"$$ver\"/" dkms.conf && \
-	git update-index --assume-unchanged dkms.conf || true
+	sed -i "s/PACKAGE_VERSION=.*/PACKAGE_VERSION=\"$$ver\"/" dkms.conf || true
 
 module: version.h
 	@$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
