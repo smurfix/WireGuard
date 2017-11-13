@@ -20,12 +20,13 @@ version.h:
 	echo "$$ver" > version.h && \
 	git update-index --assume-unchanged version.h || true
 
-dkms.conf:
+dkms.conf: dkms.conf.in
+	test -f dkms.conf || cp dkms.conf.in dkms.conf
 	@export GIT_CEILING_DIRECTORIES="$$(readlink -f ../..)" && \
 	ver="$$(git describe --dirty 2>/dev/null)" && \
 	. ./dkms.conf && \
 	[ "$$PACKAGE_VERSION" != "$$ver" ] && \
-	sed -i "s/PACKAGE_VERSION=.*/PACKAGE_VERSION=\"$$ver\"/" dkms.conf && \
+	sed -e "s/PACKAGE_VERSION=.*/PACKAGE_VERSION=\"$$ver\"/" < dkms.conf.in >dkms.conf && \
 	git update-index --assume-unchanged dkms.conf || true
 
 module: version.h
