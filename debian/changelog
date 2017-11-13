@@ -1,3 +1,11 @@
+wireguard (0.0.20171111+git1-01eebde-2) smurf; urgency=medium
+
+  * Merge
+    * don't check in modified files
+    * depend on network.target
+
+ -- Matthias Urlichs <matthias@urlichs.de>  Mon, 13 Nov 2017 19:18:28 +0100
+
 wireguard (0.0.20171111+git1-01eebde-1) smurf; urgency=medium
 
   * Current status

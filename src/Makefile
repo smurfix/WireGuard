@@ -19,10 +19,12 @@ version.h:
 	echo "$$ver" > version.h || true
 
 dkms.conf:
+	test -f dkms.conf || cp dkms.conf.in dkms.conf
 	ver="$$(cd .. && dpkg-parsechangelog -S Version)" && \
 	. ./dkms.conf && \
 	[ "$$PACKAGE_VERSION" != "$$ver" ] && \
-	sed -i "s/PACKAGE_VERSION=.*/PACKAGE_VERSION=\"$$ver\"/" dkms.conf || true
+	sed -e "s/PACKAGE_VERSION=.*/PACKAGE_VERSION=\"$$ver\"/" < dkms.conf.in >dkms.conf && \
+	git update-index --assume-unchanged dkms.conf || true
 
 module: version.h
 	@$(MAKE) -C $(KERNELDIR) M=$(PWD) modules

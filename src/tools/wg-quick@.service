@@ -1,7 +1,7 @@
 [Unit]
 Description=WireGuard via wg-quick(8) for %I
-After=network-online.target
-Wants=network-online.target
+After=network.target
+Wants=network.target
 Documentation=man:wg-quick(8)
 Documentation=man:wg(8)
 Documentation=https://www.wireguard.com/
