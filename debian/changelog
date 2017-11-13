@@ -1,3 +1,9 @@
+wireguard (0.0.20171111+git1-01eebde-1) smurf; urgency=medium
+
+  * Current status
+
+ -- Matthias Urlichs <matthias@urlichs.de>  Mon, 13 Nov 2017 14:17:38 +0100
+
 wireguard (0.0.20171111-1) unstable; urgency=medium
 
   * New upstream release
