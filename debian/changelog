@@ -1,3 +1,9 @@
+wireguard (0.0.20171111+git1-01eebde-4) smurf; urgency=medium
+
+  * set RestartSec=3 
+
+ -- Matthias Urlichs <matthias@urlichs.de>  Tue, 14 Nov 2017 14:34:27 +0100
+
 wireguard (0.0.20171111+git1-01eebde-3) smurf; urgency=medium
 
   * ignore Debian built files
