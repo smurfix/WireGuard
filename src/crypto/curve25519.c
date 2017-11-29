@@ -12,7 +12,6 @@
 #include <crypto/algapi.h>
 
 #define ARCH_HAS_SEPARATE_IRQ_STACK
-
 #if (defined(CONFIG_MIPS) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 0)) || defined(CONFIG_ARM)
 #undef ARCH_HAS_SEPARATE_IRQ_STACK
 #endif
@@ -23,15 +22,14 @@ static __always_inline void normalize_secret(u8 secret[CURVE25519_POINT_SIZE])
 	secret[31] &= 127;
 	secret[31] |= 64;
 }
-static const u8 null_point[CURVE25519_POINT_SIZE] = { 0 };
 
-#if defined(CONFIG_X86_64)
+#if defined(CONFIG_X86_64) && defined(CONFIG_AS_AVX)
 #include <asm/cpufeature.h>
 #include <asm/processor.h>
 #include <asm/fpu/api.h>
 #include <asm/simd.h>
 static bool curve25519_use_avx __read_mostly;
-void curve25519_fpu_init(void)
+void __init curve25519_fpu_init(void)
 {
 	curve25519_use_avx = boot_cpu_has(X86_FEATURE_AVX) && cpu_has_xfeatures(XFEATURE_MASK_SSE | XFEATURE_MASK_YMM, NULL);
 }
@@ -192,11 +190,11 @@ static void curve25519_sandy2x_base(u8 pub[CURVE25519_POINT_SIZE], const u8 secr
 	memzero_explicit(x_51, sizeof(x_51));
 	memzero_explicit(z_51, sizeof(z_51));
 }
-#elif IS_ENABLED(CONFIG_KERNEL_MODE_NEON) && defined(CONFIG_ARM) && !defined(CONFIG_CPU_THUMBONLY)
+#elif IS_ENABLED(CONFIG_KERNEL_MODE_NEON) && defined(CONFIG_ARM)
 #include <asm/hwcap.h>
 #include <asm/neon.h>
 #include <asm/simd.h>
-asmlinkage void curve25519_asm_neon(u8 mypublic[CURVE25519_POINT_SIZE], const u8 secret[CURVE25519_POINT_SIZE], const u8 basepoint[CURVE25519_POINT_SIZE]);
+asmlinkage void curve25519_neon(u8 mypublic[CURVE25519_POINT_SIZE], const u8 secret[CURVE25519_POINT_SIZE], const u8 basepoint[CURVE25519_POINT_SIZE]);
 static bool curve25519_use_neon __read_mostly;
 void __init curve25519_fpu_init(void)
 {
@@ -585,53 +583,27 @@ static void crecip(felem out, const felem z)
 	/* 2^255 - 21 */ fmul(out, t0, a);
 }
 
-bool curve25519(u8 mypublic[CURVE25519_POINT_SIZE], const u8 secret[CURVE25519_POINT_SIZE], const u8 basepoint[CURVE25519_POINT_SIZE])
+static bool curve25519_donna(u8 mypublic[CURVE25519_POINT_SIZE], const u8 secret[CURVE25519_POINT_SIZE], const u8 basepoint[CURVE25519_POINT_SIZE])
 {
-#ifdef CONFIG_X86_64
-	if (curve25519_use_avx && irq_fpu_usable()) {
-		kernel_fpu_begin();
-		curve25519_sandy2x(mypublic, secret, basepoint);
-		kernel_fpu_end();
-	} else
-#endif
-	{
-		limb bp[5], x[5], z[5], zmone[5];
-		u8 e[32];
+	limb bp[5], x[5], z[5], zmone[5];
+	u8 e[32];
 
-		memcpy(e, secret, 32);
-		normalize_secret(e);
+	memcpy(e, secret, 32);
+	normalize_secret(e);
 
-		fexpand(bp, basepoint);
-		cmult(x, z, e, bp);
-		crecip(zmone, z);
-		fmul(z, x, zmone);
-		fcontract(mypublic, z);
+	fexpand(bp, basepoint);
+	cmult(x, z, e, bp);
+	crecip(zmone, z);
+	fmul(z, x, zmone);
+	fcontract(mypublic, z);
 
-		memzero_explicit(e, sizeof(e));
-		memzero_explicit(bp, sizeof(bp));
-		memzero_explicit(x, sizeof(x));
-		memzero_explicit(z, sizeof(z));
-		memzero_explicit(zmone, sizeof(zmone));
-	}
-	return crypto_memneq(mypublic, null_point, CURVE25519_POINT_SIZE);
-}
+	memzero_explicit(e, sizeof(e));
+	memzero_explicit(bp, sizeof(bp));
+	memzero_explicit(x, sizeof(x));
+	memzero_explicit(z, sizeof(z));
+	memzero_explicit(zmone, sizeof(zmone));
 
-bool curve25519_generate_public(u8 pub[CURVE25519_POINT_SIZE], const u8 secret[CURVE25519_POINT_SIZE])
-{
-	static const u8 basepoint[CURVE25519_POINT_SIZE] __aligned(32) = { 9 };
-
-	if (unlikely(!crypto_memneq(secret, null_point, CURVE25519_POINT_SIZE)))
-		return false;
-
-#ifdef CONFIG_X86_64
-	if (curve25519_use_avx && irq_fpu_usable()) {
-		kernel_fpu_begin();
-		curve25519_sandy2x_base(pub, secret);
-		kernel_fpu_end();
-		return crypto_memneq(pub, null_point, CURVE25519_POINT_SIZE);
-	}
-#endif
-	return curve25519(pub, secret, basepoint);
+	return true;
 }
 #else
 typedef s64 limb;
@@ -1468,35 +1440,27 @@ static void cmult(limb *resultx, limb *resultz, const u8 *n, const limb *q)
 	memcpy(resultz, nqz, sizeof(limb) * 10);
 }
 
-bool curve25519(u8 mypublic[CURVE25519_POINT_SIZE], const u8 secret[CURVE25519_POINT_SIZE], const u8 basepoint[CURVE25519_POINT_SIZE])
+static bool curve25519_donna(u8 mypublic[CURVE25519_POINT_SIZE], const u8 secret[CURVE25519_POINT_SIZE], const u8 basepoint[CURVE25519_POINT_SIZE])
 {
-#if IS_ENABLED(CONFIG_KERNEL_MODE_NEON) && defined(CONFIG_ARM) && !defined(CONFIG_CPU_THUMBONLY)
-	if (curve25519_use_neon && may_use_simd()) {
-		kernel_neon_begin();
-		curve25519_asm_neon(mypublic, secret, basepoint);
-		kernel_neon_end();
-	} else
-#endif
-	{
-		limb bp[10], x[10], z[11], zmone[10];
-		u8 e[32];
+	limb bp[10], x[10], z[11], zmone[10];
+	u8 e[32];
 
-		memcpy(e, secret, 32);
-		normalize_secret(e);
+	memcpy(e, secret, 32);
+	normalize_secret(e);
 
-		fexpand(bp, basepoint);
-		cmult(x, z, e, bp);
-		crecip(zmone, z);
-		fmul(z, x, zmone);
-		fcontract(mypublic, z);
+	fexpand(bp, basepoint);
+	cmult(x, z, e, bp);
+	crecip(zmone, z);
+	fmul(z, x, zmone);
+	fcontract(mypublic, z);
 
-		memzero_explicit(e, sizeof(e));
-		memzero_explicit(bp, sizeof(bp));
-		memzero_explicit(x, sizeof(x));
-		memzero_explicit(z, sizeof(z));
-		memzero_explicit(zmone, sizeof(zmone));
-	}
-	return crypto_memneq(mypublic, null_point, CURVE25519_POINT_SIZE);
+	memzero_explicit(e, sizeof(e));
+	memzero_explicit(bp, sizeof(bp));
+	memzero_explicit(x, sizeof(x));
+	memzero_explicit(z, sizeof(z));
+	memzero_explicit(zmone, sizeof(zmone));
+
+	return true;
 }
 #else
 struct other_stack {
@@ -1647,35 +1611,54 @@ static void cmult(struct other_stack *s, limb *resultx, limb *resultz, const u8 
 	memcpy(resultz, nqz, sizeof(limb) * 10);
 }
 
+static bool curve25519_donna(u8 mypublic[CURVE25519_POINT_SIZE], const u8 secret[CURVE25519_POINT_SIZE], const u8 basepoint[CURVE25519_POINT_SIZE])
+{
+	struct other_stack *s = kzalloc(sizeof(struct other_stack), GFP_KERNEL);
+
+	if (unlikely(!s))
+		return false;
+
+	memcpy(s->ee, secret, 32);
+	normalize_secret(s->ee);
+
+	fexpand(s->bp, basepoint);
+	cmult(s, s->x, s->z, s->ee, s->bp);
+	crecip(s->zmone, s->z);
+	fmul(s->z, s->x, s->zmone);
+	fcontract(mypublic, s->z);
+
+	kzfree(s);
+	return true;
+}
+#endif
+#endif
+
+static const u8 null_point[CURVE25519_POINT_SIZE] = { 0 };
+
 bool curve25519(u8 mypublic[CURVE25519_POINT_SIZE], const u8 secret[CURVE25519_POINT_SIZE], const u8 basepoint[CURVE25519_POINT_SIZE])
 {
-#if IS_ENABLED(CONFIG_KERNEL_MODE_NEON) && defined(CONFIG_ARM) && !defined(CONFIG_CPU_THUMBONLY)
+	bool ret = true;
+#if defined(CONFIG_X86_64) && defined(CONFIG_AS_AVX)
+	if (curve25519_use_avx && irq_fpu_usable()) {
+		kernel_fpu_begin();
+		curve25519_sandy2x(mypublic, secret, basepoint);
+		kernel_fpu_end();
+	} else
+#elif IS_ENABLED(CONFIG_KERNEL_MODE_NEON) && defined(CONFIG_ARM)
 	if (curve25519_use_neon && may_use_simd()) {
 		kernel_neon_begin();
-		curve25519_asm_neon(mypublic, secret, basepoint);
+		curve25519_neon(mypublic, secret, basepoint);
 		kernel_neon_end();
 	} else
 #endif
-	{
-		struct other_stack *s = kzalloc(sizeof(struct other_stack), GFP_KERNEL);
+		ret = curve25519_donna(mypublic, secret, basepoint);
 
-		if (unlikely(!s))
-			return false;
+	if (!ret) /* OOM or the like; not the result of a cryptographic operation or string comparison. */
+		return ret;
 
-		memcpy(s->ee, secret, 32);
-		normalize_secret(s->ee);
-
-		fexpand(s->bp, basepoint);
-		cmult(s, s->x, s->z, s->ee, s->bp);
-		crecip(s->zmone, s->z);
-		fmul(s->z, s->x, s->zmone);
-		fcontract(mypublic, s->z);
-
-		kzfree(s);
-	}
 	return crypto_memneq(mypublic, null_point, CURVE25519_POINT_SIZE);
 }
-#endif
+
 bool curve25519_generate_public(u8 pub[CURVE25519_POINT_SIZE], const u8 secret[CURVE25519_POINT_SIZE])
 {
 	static const u8 basepoint[CURVE25519_POINT_SIZE] __aligned(32) = { 9 };
@@ -1683,9 +1666,17 @@ bool curve25519_generate_public(u8 pub[CURVE25519_POINT_SIZE], const u8 secret[C
 	if (unlikely(!crypto_memneq(secret, null_point, CURVE25519_POINT_SIZE)))
 		return false;
 
+#if defined(CONFIG_X86_64) && defined(CONFIG_AS_AVX)
+	if (curve25519_use_avx && irq_fpu_usable()) {
+		kernel_fpu_begin();
+		curve25519_sandy2x_base(pub, secret);
+		kernel_fpu_end();
+		return crypto_memneq(pub, null_point, CURVE25519_POINT_SIZE);
+	}
+#endif
+
 	return curve25519(pub, secret, basepoint);
 }
-#endif
 
 void curve25519_generate_secret(u8 secret[CURVE25519_POINT_SIZE])
 {

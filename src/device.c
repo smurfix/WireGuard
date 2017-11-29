@@ -51,7 +51,7 @@ static int open(struct net_device *dev)
 #endif
 #endif
 
-	ret = socket_init(wg);
+	ret = socket_init(wg, wg->incoming_port);
 	if (ret < 0)
 		return ret;
 	mutex_lock(&wg->device_update_lock);
@@ -64,7 +64,7 @@ static int open(struct net_device *dev)
 	return 0;
 }
 
-#ifdef CONFIG_PM_SLEEP
+#if defined(CONFIG_PM_SLEEP) && !defined(CONFIG_ANDROID)
 static int pm_notification(struct notifier_block *nb, unsigned long action, void *data)
 {
 	struct wireguard_device *wg;
@@ -102,10 +102,11 @@ static int stop(struct net_device *dev)
 		timers_stop(peer);
 		noise_handshake_clear(&peer->handshake);
 		noise_keypairs_clear(&peer->keypairs);
+		peer->last_sent_handshake = get_jiffies_64() - REKEY_TIMEOUT - HZ;
 	}
 	mutex_unlock(&wg->device_update_lock);
 	skb_queue_purge(&wg->incoming_handshakes);
-	socket_uninit(wg);
+	socket_reinit(wg, NULL, NULL);
 	return 0;
 }
 
@@ -208,8 +209,9 @@ static void destruct(struct net_device *dev)
 	list_del(&wg->device_list);
 	rtnl_unlock();
 	mutex_lock(&wg->device_update_lock);
-	peer_remove_all(wg); /* The final references are cleared in the below calls to destroy_workqueue. */
 	wg->incoming_port = 0;
+	socket_reinit(wg, NULL, NULL);
+	peer_remove_all(wg); /* The final references are cleared in the below calls to destroy_workqueue. */
 	destroy_workqueue(wg->handshake_receive_wq);
 	destroy_workqueue(wg->handshake_send_wq);
 	packet_queue_free(&wg->decrypt_queue, true);
@@ -220,7 +222,6 @@ static void destruct(struct net_device *dev)
 	ratelimiter_uninit();
 	memzero_explicit(&wg->static_identity, sizeof(struct noise_static_identity));
 	skb_queue_purge(&wg->incoming_handshakes);
-	socket_uninit(wg);
 	free_percpu(dev->tstats);
 	free_percpu(wg->incoming_handshakes_worker);
 	if (wg->have_creating_net_ref)
@@ -375,7 +376,7 @@ int __init device_init(void)
 {
 	int ret;
 
-#ifdef CONFIG_PM_SLEEP
+#if defined(CONFIG_PM_SLEEP) && !defined(CONFIG_ANDROID)
 	ret = register_pm_notifier(&pm_notifier);
 	if (ret)
 		return ret;
@@ -394,7 +395,7 @@ int __init device_init(void)
 error_netdevice:
 	unregister_netdevice_notifier(&netdevice_notifier);
 error_pm:
-#ifdef CONFIG_PM_SLEEP
+#if defined(CONFIG_PM_SLEEP) && !defined(CONFIG_ANDROID)
 	unregister_pm_notifier(&pm_notifier);
 #endif
 	return ret;
@@ -404,7 +405,7 @@ void device_uninit(void)
 {
 	rtnl_link_unregister(&link_ops);
 	unregister_netdevice_notifier(&netdevice_notifier);
-#ifdef CONFIG_PM_SLEEP
+#if defined(CONFIG_PM_SLEEP) && !defined(CONFIG_ANDROID)
 	unregister_pm_notifier(&pm_notifier);
 #endif
 	rcu_barrier_bh();
