@@ -1,7 +1,9 @@
-/* Original author: Adam Langley <agl@imperialviolet.org>
+/* SPDX-License-Identifier: GPL-2.0
  *
- * Copyright 2008 Google Inc. All Rights Reserved.
+ * Copyright (C) 2008 Google Inc. All Rights Reserved.
  * Copyright (C) 2015-2017 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
+ *
+ * Original author: Adam Langley <agl@imperialviolet.org>
  */
 
 #include "curve25519.h"
@@ -31,7 +33,9 @@ static __always_inline void normalize_secret(u8 secret[CURVE25519_POINT_SIZE])
 static bool curve25519_use_avx __read_mostly;
 void __init curve25519_fpu_init(void)
 {
+#ifndef CONFIG_UML
 	curve25519_use_avx = boot_cpu_has(X86_FEATURE_AVX) && cpu_has_xfeatures(XFEATURE_MASK_SSE | XFEATURE_MASK_YMM, NULL);
+#endif
 }
 
 typedef u64 fe[10];

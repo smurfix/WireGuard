@@ -1,4 +1,7 @@
-/* Copyright (C) 2015-2017 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved. */
+/* SPDX-License-Identifier: GPL-2.0
+ *
+ * Copyright (C) 2015-2017 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
+ */
 
 #ifndef _WG_COMPAT_H
 #define _WG_COMPAT_H
@@ -465,7 +468,8 @@ static inline struct nlattr **genl_family_attrbuf(const struct genl_family *fami
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 #include <net/genetlink.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0) && !defined(ISRHEL7)
-#define genl_register_family(a) genl_register_family_with_ops(a, (struct genl_ops *)genl_ops, ARRAY_SIZE(genl_ops))
+#define genl_register_family(a) genl_register_family_with_ops(a, genl_ops, ARRAY_SIZE(genl_ops))
+#define COMPAT_CANNOT_USE_CONST_GENL_OPS
 #else
 #define genl_register_family(a) genl_register_family_with_ops(a, genl_ops)
 #endif
@@ -527,8 +531,11 @@ static inline int cpu_has_xfeatures(u64 xfeatures_needed, const char **feature_n
 #ifndef XFEATURE_MASK_SSE
 #define XFEATURE_MASK_SSE XSTATE_SSE
 #endif
-#ifndef XFEATURE_MASK_ZMM_Hi256
-#define XFEATURE_MASK_ZMM_Hi256 XSTATE_ZMM_Hi256
+#ifndef XSTATE_AVX512
+#define XSTATE_AVX512 (XSTATE_OPMASK | XSTATE_ZMM_Hi256 | XSTATE_Hi16_ZMM)
+#endif
+#ifndef XFEATURE_MASK_AVX512
+#define XFEATURE_MASK_AVX512 XSTATE_AVX512
 #endif
 #endif
 

@@ -1,4 +1,7 @@
-/* Copyright (C) 2015-2017 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved. */
+/* SPDX-License-Identifier: GPL-2.0
+ *
+ * Copyright (C) 2015-2017 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
+ */
 
 #include "netlink.h"
 #include "device.h"
@@ -465,7 +468,12 @@ out_nodev:
 	return ret;
 }
 
-static const struct genl_ops genl_ops[] = {
+#ifndef COMPAT_CANNOT_USE_CONST_GENL_OPS
+static const
+#else
+static
+#endif
+struct genl_ops genl_ops[] = {
 	{
 		.cmd = WG_CMD_GET_DEVICE,
 #ifndef COMPAT_CANNOT_USE_NETLINK_START
@@ -498,12 +506,12 @@ __ro_after_init = {
 	.netnsok = true
 };
 
-int __init netlink_init(void)
+int __init genetlink_init(void)
 {
 	return genl_register_family(&genl_family);
 }
 
-void __exit netlink_uninit(void)
+void __exit genetlink_uninit(void)
 {
 	genl_unregister_family(&genl_family);
 }
