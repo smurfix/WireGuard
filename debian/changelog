@@ -1,3 +1,9 @@
+wireguard (0.0.20180524-1) smurf; urgency=medium
+
+  * Merge upstream
+
+ -- Matthias Urlichs <matthias@urlichs.de>  Sun, 27 May 2018 10:26:19 +0200
+
 wireguard (0.0.20180218-1) smurf; urgency=medium
 
   * Merge upstream

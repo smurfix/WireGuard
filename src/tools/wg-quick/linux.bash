@@ -26,6 +26,16 @@ CONFIG_FILE=""
 PROGRAM="${0##*/}"
 ARGS=( "$@" )
 
+cmd() {
+	echo "[#] $*" >&2
+	"$@"
+}
+
+die() {
+	echo "$PROGRAM: $*" >&2
+	exit 1
+}
+
 parse_options() {
 	local interface_section=0 line key value stripped
 	CONFIG_FILE="$1"
@@ -68,39 +78,32 @@ read_bool() {
 	esac
 }
 
-cmd() {
-	echo "[#] $*" >&2
-	"$@"
-}
-
-die() {
-	echo "$PROGRAM: $*" >&2
-	exit 1
-}
-
 auto_su() {
-	[[ $UID == 0 ]] || exec sudo -p "$PROGRAM must be run as root. Please enter the password for %u to continue: " "$SELF" "${ARGS[@]}"
+	[[ $UID == 0 ]] || exec sudo -p "$PROGRAM must be run as root. Please enter the password for %u to continue: " -- "$BASH" -- "$SELF" "${ARGS[@]}"
 }
 
 add_if() {
-	cmd ip link add "$INTERFACE" type wireguard
+	local ret
+	if ! cmd ip link add "$INTERFACE" type wireguard; then
+		ret=$?
+		[[ -e /sys/module/wireguard ]] || ! command -v "${WG_QUICK_USERSPACE_IMPLEMENTATION:-wireguard-go}" >/dev/null && exit $ret
+		echo "[!] Missing WireGuard kernel module. Falling back to slow userspace implementation."
+		cmd "${WG_QUICK_USERSPACE_IMPLEMENTATION:-wireguard-go}" "$INTERFACE"
+	fi
 }
 
 del_if() {
-	local fwmark
+	local table
 	[[ $HAVE_SET_DNS -eq 0 ]] || unset_dns
-	fwmark="$(wg show "$INTERFACE" fwmark)"
-	DEFAULT_TABLE=0
-	[[ $fwmark != off ]] && DEFAULT_TABLE=$(( fwmark ))
-	if [[ $DEFAULT_TABLE -ne 0 ]]; then
-		while [[ $(ip -4 rule show) == *"lookup $DEFAULT_TABLE"* ]]; do
-			cmd ip -4 rule delete table $DEFAULT_TABLE
+	if [[ -z $TABLE || $TABLE == auto ]] && get_fwmark table && [[ $(wg show "$INTERFACE" allowed-ips) =~ /0(\ |$'\n'|$) ]]; then
+		while [[ $(ip -4 rule show) == *"lookup $table"* ]]; do
+			cmd ip -4 rule delete table $table
 		done
 		while [[ $(ip -4 rule show) == *"from all lookup main suppress_prefixlength 0"* ]]; do
 			cmd ip -4 rule delete table main suppress_prefixlength 0
 		done
-		while [[ $(ip -6 rule show) == *"lookup $DEFAULT_TABLE"* ]]; do
-			cmd ip -6 rule delete table $DEFAULT_TABLE
+		while [[ $(ip -6 rule show) == *"lookup $table"* ]]; do
+			cmd ip -6 rule delete table $table
 		done
 		while [[ $(ip -6 rule show) == *"from all lookup main suppress_prefixlength 0"* ]]; do
 			cmd ip -6 rule delete table main suppress_prefixlength 0
@@ -136,16 +139,25 @@ set_mtu() {
 	cmd ip link set mtu $(( mtu - 80 )) dev "$INTERFACE"
 }
 
+resolvconf_iface_prefix() {
+	[[ -f /etc/resolvconf/interface-order ]] || return 0
+	local iface
+	while read -r iface; do
+		[[ $iface =~ ^([A-Za-z0-9-]+)\*$ ]] || continue
+		echo "${BASH_REMATCH[1]}." && return 0
+	done < /etc/resolvconf/interface-order
+}
+
 HAVE_SET_DNS=0
 set_dns() {
 	[[ ${#DNS[@]} -gt 0 ]] || return 0
-	printf 'nameserver %s\n' "${DNS[@]}" | cmd resolvconf -a "tun.$INTERFACE" -m 0 -x
+	printf 'nameserver %s\n' "${DNS[@]}" | cmd resolvconf -a "$(resolvconf_iface_prefix)$INTERFACE" -m 0 -x
 	HAVE_SET_DNS=1
 }
 
 unset_dns() {
 	[[ ${#DNS[@]} -gt 0 ]] || return 0
-	cmd resolvconf -d "tun.$INTERFACE"
+	cmd resolvconf -d "$(resolvconf_iface_prefix)$INTERFACE"
 }
 
 add_route() {
@@ -160,21 +172,28 @@ add_route() {
 	fi
 }
 
-DEFAULT_TABLE=
+get_fwmark() {
+	local fwmark
+	fwmark="$(wg show "$INTERFACE" fwmark)" || return 1
+	[[ -n $fwmark && $fwmark != off ]] || return 1
+	printf -v "$1" "%d" "$fwmark"
+	return 0
+}
+
 add_default() {
-	if [[ -z $DEFAULT_TABLE ]]; then
-		DEFAULT_TABLE=51820
-		while [[ -n $(ip -4 route show table $DEFAULT_TABLE) || -n $(ip -6 route show table $DEFAULT_TABLE) ]]; do
-			((DEFAULT_TABLE++))
+	local table proto key value
+	if ! get_fwmark table; then
+		table=51820
+		while [[ -n $(ip -4 route show table $table) || -n $(ip -6 route show table $table) ]]; do
+			((table++))
 		done
+		cmd wg set "$INTERFACE" fwmark $table
 	fi
-	local proto=-4
+	proto=-4
 	[[ $1 == *:* ]] && proto=-6
-	cmd wg set "$INTERFACE" fwmark $DEFAULT_TABLE
-	cmd ip $proto route add "$1" dev "$INTERFACE" table $DEFAULT_TABLE
-	cmd ip $proto rule add not fwmark $DEFAULT_TABLE table $DEFAULT_TABLE
+	cmd ip $proto route add "$1" dev "$INTERFACE" table $table
+	cmd ip $proto rule add not fwmark $table table $table
 	cmd ip $proto rule add table main suppress_prefixlength 0
-	local key value
 	while read -r key _ value; do
 		[[ $value -eq 1 ]] && sysctl -q "$key=2"
 	done < <(sysctl -a -r '^net\.ipv4.conf\.[^ .=]+\.rp_filter$')
@@ -194,7 +213,7 @@ save_config() {
 	done
 	while read -r address; do
 		[[ $address =~ ^nameserver\ ([a-zA-Z0-9_=+:%.-]+)$ ]] && new_config+="DNS = ${BASH_REMATCH[1]}"$'\n'
-	done < <(resolvconf -l "tun.$INTERFACE" 2>/dev/null)
+	done < <(resolvconf -l "$(resolvconf_iface_prefix)$INTERFACE" 2>/dev/null || cat "/etc/resolvconf/run/interface/$(resolvconf_iface_prefix)$INTERFACE" 2>/dev/null)
 	[[ -n $MTU && $(ip link show dev "$INTERFACE") =~ mtu\ ([0-9]+) ]] && new_config+="MTU = ${BASH_REMATCH[1]}"$'\n'
 	[[ -n $TABLE ]] && new_config+="Table = $TABLE"$'\n'
 	[[ $SAVE_CONFIG -eq 0 ]] || new_config+=$'SaveConfig = true\n'

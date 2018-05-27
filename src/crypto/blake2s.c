@@ -48,11 +48,6 @@ static const u8 blake2s_sigma[10][16] = {
 	{10, 2, 8, 4, 7, 6, 1, 5, 15, 11, 9, 14, 3, 12, 13, 0},
 };
 
-static inline u32 le32_to_cpuvp(const void *p)
-{
-	return le32_to_cpup(p);
-}
-
 static inline void blake2s_set_lastblock(struct blake2s_state *state)
 {
 	if (state->last_node)
@@ -113,8 +108,8 @@ void blake2s_init_key(struct blake2s_state *state, const size_t outlen, const vo
 #include <asm/processor.h>
 #include <asm/fpu/api.h>
 #include <asm/simd.h>
-static bool blake2s_use_avx __read_mostly;
-static bool blake2s_use_avx512 __read_mostly;
+static bool blake2s_use_avx __ro_after_init;
+static bool blake2s_use_avx512 __ro_after_init;
 void __init blake2s_fpu_init(void)
 {
 #ifndef CONFIG_UML
