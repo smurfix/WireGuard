@@ -1,5 +1,5 @@
-/* SPDX-License-Identifier: LGPL-2.1+
- *
+// SPDX-License-Identifier: LGPL-2.1+
+/*
  * Copyright (C) 2015-2018 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  * Copyright (C) 2008-2012 Pablo Neira Ayuso <pablo@netfilter.org>.
  */
@@ -87,39 +87,39 @@ enum wgallowedip_attribute {
 #define MNL_ATTR_HDRLEN MNL_ALIGN(sizeof(struct nlattr))
 
 enum mnl_attr_data_type {
-        MNL_TYPE_UNSPEC,
-        MNL_TYPE_U8,
-        MNL_TYPE_U16,
-        MNL_TYPE_U32,
-        MNL_TYPE_U64,
-        MNL_TYPE_STRING,
-        MNL_TYPE_FLAG,
-        MNL_TYPE_MSECS,
-        MNL_TYPE_NESTED,
-        MNL_TYPE_NESTED_COMPAT,
-        MNL_TYPE_NUL_STRING,
-        MNL_TYPE_BINARY,
-        MNL_TYPE_MAX,
+	MNL_TYPE_UNSPEC,
+	MNL_TYPE_U8,
+	MNL_TYPE_U16,
+	MNL_TYPE_U32,
+	MNL_TYPE_U64,
+	MNL_TYPE_STRING,
+	MNL_TYPE_FLAG,
+	MNL_TYPE_MSECS,
+	MNL_TYPE_NESTED,
+	MNL_TYPE_NESTED_COMPAT,
+	MNL_TYPE_NUL_STRING,
+	MNL_TYPE_BINARY,
+	MNL_TYPE_MAX,
 };
 
 #define mnl_attr_for_each(attr, nlh, offset) \
-        for ((attr) = mnl_nlmsg_get_payload_offset((nlh), (offset)); \
-             mnl_attr_ok((attr), (char *)mnl_nlmsg_get_payload_tail(nlh) - (char *)(attr)); \
-             (attr) = mnl_attr_next(attr))
+	for ((attr) = mnl_nlmsg_get_payload_offset((nlh), (offset)); \
+	     mnl_attr_ok((attr), (char *)mnl_nlmsg_get_payload_tail(nlh) - (char *)(attr)); \
+	     (attr) = mnl_attr_next(attr))
 
 #define mnl_attr_for_each_nested(attr, nest) \
-        for ((attr) = mnl_attr_get_payload(nest); \
-             mnl_attr_ok((attr), (char *)mnl_attr_get_payload(nest) + mnl_attr_get_payload_len(nest) - (char *)(attr)); \
-             (attr) = mnl_attr_next(attr))
+	for ((attr) = mnl_attr_get_payload(nest); \
+	     mnl_attr_ok((attr), (char *)mnl_attr_get_payload(nest) + mnl_attr_get_payload_len(nest) - (char *)(attr)); \
+	     (attr) = mnl_attr_next(attr))
 
 #define mnl_attr_for_each_payload(payload, payload_size) \
-        for ((attr) = (payload); \
-             mnl_attr_ok((attr), (char *)(payload) + payload_size - (char *)(attr)); \
-             (attr) = mnl_attr_next(attr))
+	for ((attr) = (payload); \
+	     mnl_attr_ok((attr), (char *)(payload) + payload_size - (char *)(attr)); \
+	     (attr) = mnl_attr_next(attr))
 
-#define MNL_CB_ERROR            -1
-#define MNL_CB_STOP              0
-#define MNL_CB_OK                1
+#define MNL_CB_ERROR	-1
+#define MNL_CB_STOP	0
+#define MNL_CB_OK	1
 
 typedef int (*mnl_attr_cb_t)(const struct nlattr *attr, void *data);
 typedef int (*mnl_cb_t)(const struct nlmsghdr *nlh, void *data);
@@ -998,8 +998,15 @@ another:
 		goto cleanup;
 	}
 	if ((len = mnl_cb_run(rtnl_buffer, len, seq, portid, read_devices_cb, buffer)) < 0) {
-		ret = -errno;
-		goto cleanup;
+		/* Netlink returns NLM_F_DUMP_INTR if the set of all tunnels changed
+		 * during the dump. That's unfortunate, but is pretty common on busy
+		 * systems that are adding and removing tunnels all the time. Rather
+		 * than retrying, potentially indefinitely, we just work with the
+		 * partial results. */
+		if (errno != EINTR) {
+			ret = -errno;
+			goto cleanup;
+		}
 	}
 	if (len == MNL_CB_OK + 1)
 		goto another;
@@ -1074,7 +1081,6 @@ cleanup:
 int wg_set_device(wg_device *dev)
 {
 	int ret = 0;
-	size_t i, j;
 	wg_peer *peer = NULL;
 	wg_allowedip *allowedip = NULL;
 	struct nlattr *peers_nest, *peer_nest, *allowedips_nest, *allowedip_nest;
@@ -1107,10 +1113,10 @@ again:
 		goto send;
 	peers_nest = peer_nest = allowedips_nest = allowedip_nest = NULL;
 	peers_nest = mnl_attr_nest_start(nlh, WGDEVICE_A_PEERS);
-	for (i = 0, peer = peer ? peer : dev->first_peer; peer; peer = peer->next_peer) {
+	for (peer = peer ? peer : dev->first_peer; peer; peer = peer->next_peer) {
 		uint32_t flags = 0;
 
-		peer_nest = mnl_attr_nest_start_check(nlh, MNL_SOCKET_BUFFER_SIZE, i++);
+		peer_nest = mnl_attr_nest_start_check(nlh, MNL_SOCKET_BUFFER_SIZE, 0);
 		if (!peer_nest)
 			goto toobig_peers;
 		if (!mnl_attr_put_check(nlh, MNL_SOCKET_BUFFER_SIZE, WGPEER_A_PUBLIC_KEY, sizeof(peer->public_key), peer->public_key))
@@ -1146,8 +1152,8 @@ again:
 			allowedips_nest = mnl_attr_nest_start_check(nlh, MNL_SOCKET_BUFFER_SIZE, WGPEER_A_ALLOWEDIPS);
 			if (!allowedips_nest)
 				goto toobig_allowedips;
-			for (j = 0; allowedip; allowedip = allowedip->next_allowedip) {
-				allowedip_nest = mnl_attr_nest_start_check(nlh, MNL_SOCKET_BUFFER_SIZE, j++);
+			for (; allowedip; allowedip = allowedip->next_allowedip) {
+				allowedip_nest = mnl_attr_nest_start_check(nlh, MNL_SOCKET_BUFFER_SIZE, 0);
 				if (!allowedip_nest)
 					goto toobig_allowedips;
 				if (!mnl_attr_put_u16_check(nlh, MNL_SOCKET_BUFFER_SIZE, WGALLOWEDIP_A_FAMILY, allowedip->family))
@@ -1593,16 +1599,11 @@ static __attribute__((noinline)) void memzero_explicit(void *s, size_t count)
 static void carry(fe o)
 {
 	int i;
-	int64_t c;
 
 	for (i = 0; i < 16; ++i) {
-		o[i] += (1LL << 16);
-		c = o[i] >> 16;
-		o[(i + 1) * (i < 15)] += c - 1 + 37 * (c - 1) * (i == 15);
-		o[i] -= c << 16;
+		o[(i + 1) % 16] += (i == 15 ? 38 : 1) * (o[i] >> 16);
+		o[i] &= 0xffff;
 	}
-
-	memzero_explicit(&c, sizeof(c));
 }
 
 static void cswap(fe p, fe q, int b)

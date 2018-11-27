@@ -1,5 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0
- *
+// SPDX-License-Identifier: GPL-2.0
+/*
  * Copyright (C) 2018 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  */
 
@@ -10,7 +10,7 @@ typedef unsigned int u32;
 typedef unsigned char u8;
 typedef u32 __le32;
 
-enum { CURVE25519_POINT_SIZE = 32 };
+enum { CURVE25519_KEY_SIZE = 32 };
 
 #ifndef __always_inline
 #define __always_inline __inline __attribute__((__always_inline__))
@@ -30,6 +30,7 @@ enum { CURVE25519_POINT_SIZE = 32 };
 #else
 #define le32_to_cpup(a) __builtin_bswap32(*(a))
 #endif
+#define get_unaligned_le32(a) le32_to_cpup((u32 *)(a))
 
 #define memset(a, b, c) __builtin_memset(a, b, c)
 #define memcpy(a, b, c) __builtin_memcpy(a, b, c)
@@ -37,14 +38,14 @@ enum { CURVE25519_POINT_SIZE = 32 };
 /* We don't even attempt to deal with this in javascript. */
 #define memzero_explicit(a, b)
 
-static __always_inline void normalize_secret(u8 secret[CURVE25519_POINT_SIZE])
+static __always_inline void normalize_secret(u8 secret[CURVE25519_KEY_SIZE])
 {
 	secret[0] &= 248;
 	secret[31] &= 127;
 	secret[31] |= 64;
 }
 
-#include "../../../../src/crypto/curve25519-fiat32.h"
+#include "../../../../src/crypto/zinc/curve25519/curve25519-fiat32.c"
 
 EMSCRIPTEN_KEEPALIVE void curve25519_generate_public(u8 public[static 32], const u8 private[static 32])
 {
