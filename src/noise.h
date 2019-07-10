@@ -1,19 +1,18 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (C) 2015-2018 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
+ * Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  */
 #ifndef _WG_NOISE_H
 #define _WG_NOISE_H
 
 #include "messages.h"
-#include "hashtables.h"
+#include "peerlookup.h"
 
 #include <linux/types.h>
 #include <linux/spinlock.h>
 #include <linux/atomic.h>
 #include <linux/rwsem.h>
 #include <linux/mutex.h>
-#include <linux/ktime.h>
 #include <linux/kref.h>
 
 union noise_counter {
